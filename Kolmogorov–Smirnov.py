@@ -84,7 +84,7 @@ def kolmogorov_filter(image):
         if D_n <= 0.2:
             rows_processed += 1
 
-    threshold_percentage = 0.75  # 50%
+    threshold_percentage = 0.75  # 75%
     min_rows_required = image.height * threshold_percentage
 
     return rows_processed >= min_rows_required
@@ -154,9 +154,6 @@ def calculate_classification_metrics(stego_results, usual_results):
 
 def test_kolmogorov_filter(stego_images, usual_images):
 
-    print("=" * 60)
-    print("ТЕСТИРОВАНИЕ ФИЛЬТРА КОЛМОГОРОВА")
-
     # Берем по 2000 изображений
     stego_sample = stego_images[:2000]
     usual_sample = usual_images[:2000]
@@ -165,17 +162,13 @@ def test_kolmogorov_filter(stego_images, usual_images):
     usual_results = []
 
     # Обрабатываем стего-изображения
-    print(f"\nОбработка стего-изображений:")
     for i, img_path in enumerate(stego_sample):
-        print(f"  Обработано: {i}/2000")
         result = process_single_image(img_path)
         if result:
             stego_results.append(result)
 
     # Обрабатываем обычные изображения
-    print(f"\nОбработка обычных изображений:")
     for i, img_path in enumerate(usual_sample):
-        print(f"  Обработано: {i}/2000")
         result = process_single_image(img_path)
         if result:
             usual_results.append(result)
@@ -184,15 +177,7 @@ def test_kolmogorov_filter(stego_images, usual_images):
     metrics = calculate_classification_metrics(stego_results, usual_results)
 
     # Выводим результаты
-    print("\n" + "=" * 60)
-    print("РЕЗУЛЬТАТЫ КЛАССИФИКАЦИИ")
-    print("=" * 60)
-
-    print(f"Общее количество: {metrics['total_samples']} изображений")
-    print(f"  Стего: {len(stego_results)}")
-    print(f"  Обычные: {len(usual_results)}")
-    print()
-
+    
     print("Матрица ошибок:")
     print(f"  TP: {metrics['tp']} | FP: {metrics['fp']}")
     print(f"  FN: {metrics['fn']} | TN: {metrics['tn']}")
