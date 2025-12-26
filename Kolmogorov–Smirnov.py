@@ -39,7 +39,7 @@ class CustomImage:
     def pixel(self, w, h):
         return self.pixels[w][h]
 
-def kolmogorov_filter(image):
+def kolmogorov_filter(image, threshold_dn, min_fill_percentage):
     rows_processed = 0
 
     for h in range(image.height):
@@ -47,55 +47,61 @@ def kolmogorov_filter(image):
         freq_red = [0] * 256
         freq_blue = [0] * 256
 
-        # Считаем частоты для каждого канала
         for w in range(image.width):
             pixel = image.pixel(w, h)
             freq_green[pixel.get_green()] += 1
             freq_red[pixel.get_red()] += 1
             freq_blue[pixel.get_blue()] += 1
 
+        expected_green = [0] * 256
+        expected_red = [0] * 256
+        expected_blue = [0] * 256
+
+        for i in range(128):
+            expected_green[2*i] = expected_green[2*i+1] = (freq_green[2*i] + freq_green[2*i+1]) / 2
+            expected_red[2*i] = expected_red[2*i+1] = (freq_red[2*i] + freq_red[2*i+1]) / 2
+            expected_blue[2*i] = expected_blue[2*i+1] = (freq_blue[2*i] + freq_blue[2*i+1]) / 2
+
+
         F_r, F_exp_r = 0, 0
         F_g, F_exp_g = 0, 0
         F_b, F_exp_b = 0, 0
         diff = 0
 
-        # Вычисляем эмпирическое и ожидаемое распределение
         for i in range(256):
             F_g += freq_green[i]
             F_r += freq_red[i]
             F_b += freq_blue[i]
-
-            if i & 1 == 0:  # четный индекс
-                if i + 1 < 256:
-                    F_exp_g += (freq_green[i] + freq_green[i + 1]) // 2
-                    F_exp_r += (freq_red[i] + freq_red[i + 1]) // 2
-                    F_exp_b += (freq_blue[i] + freq_blue[i + 1]) // 2
-            else:
-                F_exp_g += (freq_green[i - 1] + freq_green[i] + 1) // 2
-                F_exp_r += (freq_red[i - 1] + freq_red[i] + 1) // 2
-                F_exp_b += (freq_blue[i - 1] + freq_blue[i] + 1) // 2
+            
+            F_exp_g += expected_green[i]
+            F_exp_r += expected_red[i]
+            F_exp_b += expected_blue[i]
 
             current_diff = max(abs(F_r - F_exp_r), abs(F_g - F_exp_g), abs(F_b - F_exp_b))
             if current_diff > diff:
                 diff = current_diff
 
-        D_n = diff * math.sqrt(1.0 / F_r) if F_r > 0 else 0
+        total_pixels_in_row = image.width  # количество пикселей в строке (объем выборки)
 
-        if D_n <= 0.2:
+        D_n = diff / math.sqrt(total_pixels_in_row) if total_pixels_in_row > 0 else 0
+
+        #print(D_n)
+        if D_n > threshold_dn:
             rows_processed += 1
 
-    threshold_percentage = 0.75  # 75%
-    min_rows_required = image.height * threshold_percentage
+    fill_percentage = (rows_processed / image.height) * 100 if image.height > 0 else 0
+    
+    condition_met = fill_percentage >= min_fill_percentage
+    
+    #print(f"Заполненность контейнера: {fill_percentage:.2f}%")
+    
+    return condition_met
 
-    return rows_processed >= min_rows_required
-
-def process_single_image(image_path):
-    """Обрабатывает одно изображение и возвращает только условие D_n"""
+def process_single_image(image_path, threshold_dn, threshold_percentage):
     try:
         image = Image.open(image_path).convert('RGB')
         width, height = image.size
 
-        # Создаем структуру пикселей
         pixels = []
         for x in range(width):
             row = []
@@ -106,8 +112,7 @@ def process_single_image(image_path):
 
         custom_image = CustomImage(width, height, pixels)
 
-        # Применяем фильтр Колмогорова
-        condition_met = kolmogorov_filter(custom_image)
+        condition_met = kolmogorov_filter(custom_image, threshold_dn, threshold_percentage)
 
         return {
             'D_n_condition_met': condition_met
@@ -118,22 +123,17 @@ def process_single_image(image_path):
         return None
 
 def calculate_classification_metrics(stego_results, usual_results):
-    """Вычисляет метрики классификации"""
-
     y_true = []
     y_pred = []
 
-    # Стего-изображения (класс 1)
     for result in stego_results:
         y_true.append(1)
         y_pred.append(1 if result['D_n_condition_met'] else 0)
 
-    # Обычные изображения (класс 0)
     for result in usual_results:
         y_true.append(0)
         y_pred.append(1 if result['D_n_condition_met'] else 0)
 
-    # Вычисляем метрики
     cm = confusion_matrix(y_true, y_pred)
     tn, fp, fn, tp = cm.ravel()
 
@@ -153,31 +153,27 @@ def calculate_classification_metrics(stego_results, usual_results):
     }
 
 def test_kolmogorov_filter(stego_images, usual_images):
+    threshold_dn = float(input("Введите пороговое значение D_n: "))
+    threshold_percentage = float(input("Введите минимальный процент заполнения контейнера: "))
 
-    # Берем по 2000 изображений
     stego_sample = stego_images[:2000]
     usual_sample = usual_images[:2000]
 
     stego_results = []
     usual_results = []
 
-    # Обрабатываем стего-изображения
     for i, img_path in enumerate(stego_sample):
-        result = process_single_image(img_path)
+        result = process_single_image(img_path, threshold_dn, threshold_percentage)
         if result:
             stego_results.append(result)
 
-    # Обрабатываем обычные изображения
     for i, img_path in enumerate(usual_sample):
-        result = process_single_image(img_path)
+        result = process_single_image(img_path, threshold_dn, threshold_percentage)
         if result:
             usual_results.append(result)
 
-    # Вычисляем метрики
     metrics = calculate_classification_metrics(stego_results, usual_results)
 
-    # Выводим результаты
-    
     print("Матрица ошибок:")
     print(f"  TP: {metrics['tp']} | FP: {metrics['fp']}")
     print(f"  FN: {metrics['fn']} | TN: {metrics['tn']}")
